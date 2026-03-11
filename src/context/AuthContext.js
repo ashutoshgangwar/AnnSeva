@@ -7,6 +7,7 @@ export const AuthProvider = ({children}) => {
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null);
   const [authError, setAuthError] = useState(null);
+  const [hasCompletedHalwaiOnboarding, setHasCompletedHalwaiOnboarding] = useState(false);
 
   const loginWithPhone = (phoneNumber, expectedRole) => {
     const matchedUser = loginWithPhoneNumber(phoneNumber);
@@ -23,6 +24,7 @@ export const AuthProvider = ({children}) => {
 
     setUser(matchedUser);
     setRole(matchedUser.role);
+    setHasCompletedHalwaiOnboarding(matchedUser.role !== 'halwai');
     setAuthError(null);
     return true;
   };
@@ -31,6 +33,7 @@ export const AuthProvider = ({children}) => {
     setUser(null);
     setRole(null);
     setAuthError(null);
+    setHasCompletedHalwaiOnboarding(false);
   };
 
   const value = useMemo(
@@ -38,10 +41,12 @@ export const AuthProvider = ({children}) => {
       user,
       role,
       authError,
+      hasCompletedHalwaiOnboarding,
+      setHalwaiOnboardingComplete: setHasCompletedHalwaiOnboarding,
       loginWithPhone,
       logout,
     }),
-    [user, role, authError],
+    [user, role, authError, hasCompletedHalwaiOnboarding],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
