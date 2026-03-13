@@ -111,4 +111,18 @@ export const mockOrders = [
     status: 'accepted',
     progress: 'accepted',
   },
+  {
+    id: 'order_1011',
+    customerId: 'user_customer_01',
+    customerName: 'Rohit Sharma',
+    phoneNumber: '9876543210',
+    location: 'Rohini, Delhi',
+    date: '2026-03-10',
+    peopleCount: 300,
+    menuItems: ['Dal Makhani', 'Shahi Paneer', 'Jeera Rice', 'Roti', 'Gulab Jamun', 'Kheer'],
+    status: 'completed',
+    progress: 'completed',
+    totalAmount: 54000,
+    paymentStatus: 'paid',
+  },
 ];
