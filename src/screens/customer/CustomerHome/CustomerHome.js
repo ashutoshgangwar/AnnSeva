@@ -1,5 +1,6 @@
 import React, {useState} from 'react';
 import {ScrollView, Text, TouchableOpacity, View} from 'react-native';
+import AppHeader from '../../../components/AppHeader';
 import ScreenContainer from '../../../components/ScreenContainer';
 import {mockHalwai} from '../../../data/mockHalwai';
 import styles from './CustomerHome.styles';
@@ -36,17 +37,12 @@ const CustomerHome = ({navigation}) => {
 
   return (
     <ScreenContainer scrollable contentStyle={styles.content}>
-      <View style={styles.topHeader}>
-        <View style={styles.topHeaderText}>
-          <Text style={styles.welcomeTitle}>Welcome to AnnSeva</Text>
-          <Text style={styles.welcomeSubtitle}>Start planning your next Bhandara</Text>
-        </View>
-        <TouchableOpacity
-          style={styles.myOrdersBtn}
-          onPress={() => navigation.navigate('MyOrders')}>
-          <Text style={styles.myOrdersBtnText}>📋 My Orders</Text>
-        </TouchableOpacity>
-      </View>
+      <AppHeader
+        title="Welcome to AnnSeva"
+        subtitle="Start planning your next Bhandara"
+        showProfile
+        onProfilePress={() => navigation.navigate('Profile')}
+      />
 
       <View style={styles.heroCard}>
         <Text style={styles.heroLabel}>AnnSeva</Text>
@@ -64,7 +60,14 @@ const CustomerHome = ({navigation}) => {
         </View>
       </View>
 
-      <Text style={styles.sectionTitle}>Quick Actions</Text>
+      <View style={styles.quickActionsRow}>
+        <Text style={styles.sectionTitle}>Quick Actions</Text>
+        <TouchableOpacity
+          style={styles.myOrdersBtn}
+          onPress={() => navigation.navigate('MyOrders')}>
+          <Text style={styles.myOrdersBtnText}>📋 My Orders</Text>
+        </TouchableOpacity>
+      </View>
       <View style={styles.grid}>
         {options.map(option => (
           <TouchableOpacity

@@ -44,6 +44,11 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(16),
     fontWeight: '700',
     color: theme.colors.text,
+  },
+  quickActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: verticalScale(theme.spacing.sm),
   },
   grid: {
@@ -81,27 +86,6 @@ const styles = StyleSheet.create({
     fontSize: moderateScale(12),
     color: theme.colors.primary,
     fontWeight: '700',
-  },
-  topHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: verticalScale(theme.spacing.md),
-  },
-  topHeaderText: {
-    flex: 1,
-    marginRight: moderateScale(theme.spacing.sm),
-  },
-  welcomeTitle: {
-    fontSize: moderateScale(18),
-    fontWeight: '800',
-    color: theme.colors.text,
-  },
-  welcomeSubtitle: {
-    marginTop: verticalScale(2),
-    fontSize: moderateScale(12),
-    color: theme.colors.muted,
-    fontWeight: '500',
   },
   myOrdersBtn: {
     backgroundColor: theme.colors.primary,

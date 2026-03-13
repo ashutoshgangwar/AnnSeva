@@ -7,7 +7,7 @@ import SectionHeader from '../../../components/SectionHeader';
 import {useAuth} from '../../../context/AuthContext';
 import styles from './HalwaiOnboarding.styles';
 
-const HalwaiOnboarding = ({navigation}) => {
+const HalwaiOnboarding = () => {
   const {user, setHalwaiOnboardingComplete} = useAuth();
   const [form, setForm] = useState({
     halwaiName: user?.name || '',
@@ -23,7 +23,6 @@ const HalwaiOnboarding = ({navigation}) => {
   const handleContinue = () => {
     setError('');
     setHalwaiOnboardingComplete(true);
-    navigation.replace('HalwaiDashboard');
   };
 
   const updateField = (key, value) => {

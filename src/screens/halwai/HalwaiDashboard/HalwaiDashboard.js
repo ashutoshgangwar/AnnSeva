@@ -1,7 +1,7 @@
 import React from 'react';
 import {Text, TouchableOpacity, View} from 'react-native';
+import AppHeader from '../../../components/AppHeader';
 import ScreenContainer from '../../../components/ScreenContainer';
-import SectionHeader from '../../../components/SectionHeader';
 import {useOrders} from '../../../context/OrdersContext';
 import styles from './HalwaiDashboard.styles';
 
@@ -28,17 +28,16 @@ const HalwaiDashboard = ({navigation}) => {
       screen: 'ActiveOrders',
       icon: '🔥',
     },
-    {
-      title: 'Profile',
-      subtitle: 'Update your business info',
-      screen: 'HalwaiProfile',
-      icon: '👨‍🍳',
-    },
   ];
 
   return (
     <ScreenContainer scrollable>
-      <SectionHeader title="Namaste Halwai" subtitle="Manage your orders and profile" />
+      <AppHeader
+        title="Namaste Halwai"
+        subtitle="Manage your orders and profile"
+        showProfile
+        onProfilePress={() => navigation.navigate('Profile')}
+      />
 
       <View style={styles.heroCard}>
         <Text style={styles.heroLabel}>Today&apos;s overview</Text>
