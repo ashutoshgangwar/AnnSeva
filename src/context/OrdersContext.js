@@ -22,11 +22,25 @@ export const OrdersProvider = ({children}) => {
     );
   };
 
+  const updateOrderProgress = (orderId, progress) => {
+    setOrders(current =>
+      current.map(order => (order.id === orderId ? {...order, progress} : order)),
+    );
+  };
+
+  const updateOrderDetails = (orderId, updates) => {
+    setOrders(current =>
+      current.map(order => (order.id === orderId ? {...order, ...updates} : order)),
+    );
+  };
+
   const value = useMemo(
     () => ({
       orders,
       createOrder,
       updateOrderStatus,
+      updateOrderProgress,
+      updateOrderDetails,
     }),
     [orders],
   );
