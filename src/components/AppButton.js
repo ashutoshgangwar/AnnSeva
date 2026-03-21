@@ -20,6 +20,9 @@ const styles = StyleSheet.create({
   danger: {
     backgroundColor: theme.colors.danger,
   },
+  disabled: {
+    backgroundColor: '#9CA3AF',
+  },
   textBase: {
     fontSize: 15,
     fontWeight: '600',
@@ -32,15 +35,16 @@ const styles = StyleSheet.create({
   },
 });
 
-const AppButton = ({title, onPress, variant = 'primary', style}) => {
+const AppButton = ({title, onPress, variant = 'primary', style, disabled = false}) => {
   const isOutline = variant === 'outline';
   const isDanger = variant === 'danger';
 
   return (
     <TouchableOpacity
       onPress={onPress}
-      style={[styles.base, styles[variant], style]}
-      activeOpacity={0.8}>
+      style={[styles.base, styles[variant], disabled ? styles.disabled : null, style]}
+      activeOpacity={0.8}
+      disabled={disabled}>
       <Text
         style={[
           styles.textBase,

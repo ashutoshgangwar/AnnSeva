@@ -1,10 +1,12 @@
-import React, {useState} from 'react';
-import {Text, TextInput, TouchableOpacity, View} from 'react-native';
+import React, {useEffect, useMemo, useState} from 'react';
+import {ActivityIndicator, Alert, Text, TextInput, TouchableOpacity, View} from 'react-native';
 import {verticalScale} from 'react-native-size-matters';
 import AppButton from '../../../components/AppButton';
 import ScreenContainer from '../../../components/ScreenContainer';
 import {useAuth} from '../../../context/AuthContext';
 import {useOrders} from '../../../context/OrdersContext';
+import {GOOGLE_PLACES_API_KEY} from '../../../config/env';
+import {createCustomerRequest} from '../../../services/orderApi';
 import styles from './CreateBhandara.styles';
 
 const MENU_OPTIONS = [
@@ -34,53 +36,258 @@ const SERVING_STYLES = [
 
 const PRICE_PER_PLATE = 180;
 
-const CreateBhandara = () => {
-  const {user} = useAuth();
+const EVENT_DATE_FORMAT_HINT = 'YYYY-MM-DD HH:mm';
+
+const normalizeServingStyle = value => value.toLowerCase().replace(/\s+/g, '-');
+
+const normalizeMenuItems = items => items.map(item => item.toLowerCase());
+
+const parseEventDate = inputValue => {
+  const value = inputValue.trim();
+
+  if (!value) {
+    return null;
+  }
+
+  const parsedDate = new Date(value);
+  if (Number.isNaN(parsedDate.getTime())) {
+    return null;
+  }
+
+  return parsedDate.toISOString();
+};
+
+const toPredictionItem = prediction => ({
+  id: prediction.place_id,
+  description: prediction.description,
+  placeId: prediction.place_id,
+});
+
+const CreateBhandara = ({navigation}) => {
+  const {user, accessToken} = useAuth();
   const {createOrder} = useOrders();
   const [location, setLocation] = useState('');
   const [date, setDate] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState(user?.phoneNumber || user?.phone || '');
   const [peopleCount, setPeopleCount] = useState('');
   const [menuItems, setMenuItems] = useState([]);
   const [eventType, setEventType] = useState('');
-  const [isVeg, setIsVeg] = useState(true);
   const [servingStyle, setServingStyle] = useState('');
   const [instructions, setInstructions] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isFetchingCurrentLocation, setIsFetchingCurrentLocation] = useState(false);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  const [locationSuggestions, setLocationSuggestions] = useState([]);
+  const [currentLocation, setCurrentLocation] = useState(null);
+  const [selectedLocationCoords, setSelectedLocationCoords] = useState(null);
 
   const toggleItem = item =>
     setMenuItems(cur =>
       cur.includes(item) ? cur.filter(v => v !== item) : [...cur, item],
     );
 
-  const estimatedCost = Number(peopleCount) > 0 ? Number(peopleCount) * PRICE_PER_PLATE : null;
+  useEffect(() => {
+    const timerId = setTimeout(async () => {
+      if (!GOOGLE_PLACES_API_KEY || location.trim().length < 2) {
+        setLocationSuggestions([]);
+        return;
+      }
 
-  const handleSubmit = () => {
-    if (!user || !location || !date || !peopleCount) {return;}
-    createOrder({
-      customerId: user.id,
-      customerName: user.name,
-      location,
-      date,
-      peopleCount: Number(peopleCount),
-      menuItems,
-      eventType,
-      isVeg,
-      servingStyle,
-      instructions,
-    });
-    setSubmitted(true);
-    setLocation('');
-    setDate('');
-    setPeopleCount('');
-    setMenuItems([]);
-    setEventType('');
-    setIsVeg(true);
-    setServingStyle('');
-    setInstructions('');
-    setTimeout(() => setSubmitted(false), 4000);
+      setIsLoadingSuggestions(true);
+
+      try {
+        const locationBias = currentLocation
+          ? `&location=${currentLocation.latitude},${currentLocation.longitude}&radius=30000`
+          : '';
+
+        const response = await fetch(
+          `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(
+            location,
+          )}&components=country:in${locationBias}&key=${GOOGLE_PLACES_API_KEY}`,
+        );
+
+        const payload = await response.json().catch(() => null);
+
+        if (payload?.status === 'OK' && Array.isArray(payload.predictions)) {
+          setLocationSuggestions(payload.predictions.slice(0, 5).map(toPredictionItem));
+          return;
+        }
+
+        setLocationSuggestions([]);
+      } catch (_error) {
+        setLocationSuggestions([]);
+      } finally {
+        setIsLoadingSuggestions(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(timerId);
+  }, [currentLocation, location]);
+
+  const fetchAddressFromCoordinates = async coords => {
+    if (!GOOGLE_PLACES_API_KEY || !coords) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${coords.latitude},${coords.longitude}&key=${GOOGLE_PLACES_API_KEY}`,
+      );
+      const payload = await response.json().catch(() => null);
+      const formattedAddress = payload?.results?.[0]?.formatted_address;
+      if (formattedAddress) {
+        setLocation(formattedAddress);
+      }
+    } catch (_error) {
+      // no-op fallback: keep manual input
+    }
   };
 
-  const isReady = location && date && peopleCount;
+  const handleUseCurrentLocation = async () => {
+    if (!GOOGLE_PLACES_API_KEY) {
+      Alert.alert('Missing API Key', 'Please add Google Places API key in .env file.');
+      return;
+    }
+
+    setIsFetchingCurrentLocation(true);
+
+    try {
+      const response = await fetch(
+        `https://www.googleapis.com/geolocation/v1/geolocate?key=${GOOGLE_PLACES_API_KEY}`,
+        {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({considerIp: true}),
+        },
+      );
+
+      const payload = await response.json().catch(() => null);
+      const latitude = payload?.location?.lat;
+      const longitude = payload?.location?.lng;
+
+      if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+        throw new Error('Unable to fetch current coordinates');
+      }
+
+      const nextCoords = {latitude, longitude};
+      setCurrentLocation(nextCoords);
+      setSelectedLocationCoords(nextCoords);
+      await fetchAddressFromCoordinates(nextCoords);
+    } catch (_error) {
+      Alert.alert('Location Error', 'Could not fetch current location. Enter address manually.');
+    } finally {
+      setIsFetchingCurrentLocation(false);
+    }
+  };
+
+  const handleSelectSuggestion = async suggestion => {
+    if (!GOOGLE_PLACES_API_KEY || !suggestion?.placeId) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/place/details/json?place_id=${suggestion.placeId}&fields=formatted_address,geometry&key=${GOOGLE_PLACES_API_KEY}`,
+      );
+      const payload = await response.json().catch(() => null);
+      const details = payload?.result;
+      const latitude = details?.geometry?.location?.lat;
+      const longitude = details?.geometry?.location?.lng;
+
+      setLocation(details?.formatted_address || suggestion.description);
+      setLocationSuggestions([]);
+
+      if (typeof latitude === 'number' && typeof longitude === 'number') {
+        setSelectedLocationCoords({latitude, longitude});
+      }
+    } catch (_error) {
+      setLocation(suggestion.description);
+      setLocationSuggestions([]);
+    }
+  };
+
+  const estimatedCost = Number(peopleCount) > 0 ? Number(peopleCount) * PRICE_PER_PLATE : null;
+
+  const normalizedEventDate = useMemo(() => parseEventDate(date), [date]);
+
+  const handleSubmit = async () => {
+    const userId = user?.userId || user?.id || user?._id;
+
+    if (!userId || !location || !date || !peopleCount || !phoneNumber) {
+      Alert.alert('Missing Details', 'Please fill phone, location, event date, and guests count.');
+      return;
+    }
+
+    if (!normalizedEventDate) {
+      Alert.alert('Invalid Date', `Enter date as ${EVENT_DATE_FORMAT_HINT} or valid ISO datetime.`);
+      return;
+    }
+
+    const fallbackCoords = currentLocation || {latitude: 28.6139, longitude: 77.209};
+    const finalCoords = selectedLocationCoords || fallbackCoords;
+
+    const payload = {
+      userId,
+      customerName: user?.name || 'Customer',
+      phoneNumber: phoneNumber.trim(),
+      priority: 'high',
+      customerAddress: location.trim(),
+      currentLocation: {
+        latitude: finalCoords.latitude,
+        longitude: finalCoords.longitude,
+      },
+      eventDate: normalizedEventDate,
+      numberOfGuests: Number(peopleCount),
+      menu: normalizeMenuItems(menuItems),
+      eventType: (eventType || 'bhandara').toLowerCase(),
+      servingStyle: normalizeServingStyle(servingStyle || 'plate service'),
+      additionalNote: instructions.trim(),
+    };
+
+    setIsSubmitting(true);
+
+    try {
+      const createdOrder = await createCustomerRequest({
+        payload,
+        accessToken,
+      });
+
+      createOrder({
+        customerId: createdOrder.userId || userId,
+        customerName: createdOrder.customerName,
+        phoneNumber: createdOrder.phoneNumber,
+        location: createdOrder.customerAddress,
+        date: createdOrder.eventDate,
+        peopleCount: createdOrder.numberOfGuests,
+        menuItems: createdOrder.menu?.map(item => item.itemName) || menuItems,
+        eventType: createdOrder.eventType,
+        servingStyle: createdOrder.servingStyle,
+        instructions: createdOrder.additionalNote,
+        status: createdOrder.status,
+        paymentStatus: createdOrder.paymentStatus,
+      });
+
+      setSubmitted(true);
+      setLocation('');
+      setDate('');
+      setPhoneNumber(user?.phoneNumber || user?.phone || '');
+      setPeopleCount('');
+      setMenuItems([]);
+      setEventType('');
+      setServingStyle('');
+      setInstructions('');
+      setLocationSuggestions([]);
+      setTimeout(() => setSubmitted(false), 4000);
+      navigation.navigate('CustomerHome');
+    } catch (error) {
+      Alert.alert('Order Failed', error?.message || 'Could not create request. Try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const isReady = location && date && peopleCount && phoneNumber;
 
   return (
     <ScreenContainer scrollable contentStyle={styles.content}>
@@ -101,6 +308,16 @@ const CreateBhandara = () => {
         </View>
 
         <Text style={styles.fieldLabel}>📍 Location</Text>
+        <TouchableOpacity
+          style={styles.currentLocationButton}
+          onPress={handleUseCurrentLocation}
+          disabled={isFetchingCurrentLocation}>
+          {isFetchingCurrentLocation ? (
+            <ActivityIndicator size="small" color="#065F46" />
+          ) : (
+            <Text style={styles.currentLocationButtonText}>📡 Use Current Location</Text>
+          )}
+        </TouchableOpacity>
         <TextInput
           style={styles.input}
           value={location}
@@ -108,13 +325,40 @@ const CreateBhandara = () => {
           placeholder="Enter event location"
           placeholderTextColor="#9CA3AF"
         />
+        {(isLoadingSuggestions || locationSuggestions.length > 0) && (
+          <View style={styles.suggestionsContainer}>
+            {isLoadingSuggestions ? (
+              <Text style={styles.suggestionLoadingText}>Finding places...</Text>
+            ) : (
+              locationSuggestions.map(suggestion => (
+                <TouchableOpacity
+                  key={suggestion.id}
+                  style={styles.suggestionItem}
+                  onPress={() => handleSelectSuggestion(suggestion)}>
+                  <Text style={styles.suggestionItemText}>{suggestion.description}</Text>
+                </TouchableOpacity>
+              ))
+            )}
+          </View>
+        )}
+
+        <Text style={styles.fieldLabel}>📞 Phone Number</Text>
+        <TextInput
+          style={styles.input}
+          value={phoneNumber}
+          onChangeText={setPhoneNumber}
+          placeholder="Enter customer phone number"
+          placeholderTextColor="#9CA3AF"
+          keyboardType="phone-pad"
+          maxLength={15}
+        />
 
         <Text style={styles.fieldLabel}>📅 Date</Text>
         <TextInput
           style={styles.input}
           value={date}
           onChangeText={setDate}
-          placeholder="YYYY-MM-DD"
+          placeholder={EVENT_DATE_FORMAT_HINT}
           placeholderTextColor="#9CA3AF"
         />
 
@@ -243,9 +487,16 @@ const CreateBhandara = () => {
       )}
 
       <AppButton
-        title={isReady ? '🚀 Submit Bhandara Request' : 'Fill details to continue'}
+        title={
+          isSubmitting
+            ? 'Submitting...'
+            : isReady
+              ? '🚀 Submit Bhandara Request'
+              : 'Fill details to continue'
+        }
         onPress={handleSubmit}
         style={styles.submitBtn}
+        disabled={!isReady || isSubmitting}
       />
 
       {submitted && (
