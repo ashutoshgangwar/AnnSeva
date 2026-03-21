@@ -1,10 +1,11 @@
-import React from 'react';
-import {Text, View} from 'react-native';
+import React, {useCallback, useEffect, useMemo, useState} from 'react';
+import {Text, TouchableOpacity, View} from 'react-native';
 import AppButton from '../../../components/AppButton';
 import Card from '../../../components/Card';
 import ScreenContainer from '../../../components/ScreenContainer';
 import SectionHeader from '../../../components/SectionHeader';
-import {useOrders} from '../../../context/OrdersContext';
+import {useAuth} from '../../../context/AuthContext';
+import {getIncomingOrders, updateIncomingOrderStatus} from '../../../services/orderApi';
 import styles from './IncomingOrders.styles';
 
 const getDaysUntil = eventDate => {
@@ -15,7 +16,21 @@ const getDaysUntil = eventDate => {
 };
 
 const getPriority = order => {
-  const daysUntil = getDaysUntil(order.date);
+  const apiPriority = (order.priorityLevel || '').toLowerCase();
+
+  if (apiPriority === 'high') {
+    return 'High Priority';
+  }
+
+  if (apiPriority === 'medium') {
+    return 'Medium Priority';
+  }
+
+  if (apiPriority === 'low') {
+    return 'Normal Priority';
+  }
+
+  const daysUntil = getDaysUntil(order.eventDateISO);
   if (daysUntil <= 7 || order.peopleCount >= 300) {
     return 'High Priority';
   }
@@ -28,18 +43,127 @@ const getPriority = order => {
 };
 
 const IncomingOrders = () => {
-  const {orders, updateOrderStatus} = useOrders();
-  const pendingOrders = orders.filter(order => order.status === 'pending');
-  const displayedOrders = [...pendingOrders]
-    .sort(
-    (orderA, orderB) => new Date(orderA.date) - new Date(orderB.date),
+  const {accessToken} = useAuth();
+  const [orders, setOrders] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [submittingByOrder, setSubmittingByOrder] = useState({});
+
+  const toUiOrder = useCallback(order => {
+    const menuItems = Array.isArray(order?.menu)
+      ? order.menu
+          .map(menuItem => menuItem?.itemName)
+          .filter(itemName => typeof itemName === 'string' && itemName.trim().length > 0)
+      : [];
+
+    return {
+      id: order?.orderId || order?._id || order?.id || '',
+      customerName: order?.customerName || 'Customer',
+      phoneNumber: order?.phoneNumber || '',
+      location: order?.address || 'Address not available',
+      eventDateISO: order?.eventDate || '',
+      date: order?.eventDate
+        ? new Date(order.eventDate).toLocaleDateString('en-IN')
+        : 'Date not available',
+      peopleCount: Number(order?.numberOfGuests || 0),
+      menuItems,
+      priorityLevel: order?.priority || '',
+      status: (order?.status || '').toLowerCase() || 'pending',
+      additionalNote: order?.additionalNote || '',
+    };
+  }, []);
+
+  const fetchIncomingOrders = useCallback(async () => {
+    if (!accessToken) {
+      setOrders([]);
+      setErrorMessage('Please log in again to view incoming orders.');
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMessage('');
+
+    try {
+      const incomingOrders = await getIncomingOrders({accessToken});
+      setOrders(incomingOrders.map(toUiOrder));
+    } catch (error) {
+      setOrders([]);
+      setErrorMessage(error.message || 'Failed to fetch incoming orders.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [accessToken, toUiOrder]);
+
+  useEffect(() => {
+    fetchIncomingOrders();
+  }, [fetchIncomingOrders]);
+
+  const updateLocalOrderStatus = useCallback((orderId, status) => {
+    setOrders(currentOrders =>
+      currentOrders.map(order => (order.id === orderId ? {...order, status} : order)),
     );
+  }, []);
+
+  const handleDecision = useCallback(
+    async (orderId, decision) => {
+      if (!accessToken) {
+        setErrorMessage('Please log in again to update order status.');
+        return;
+      }
+
+      setSubmittingByOrder(current => ({
+        ...current,
+        [orderId]: decision,
+      }));
+
+      try {
+        const updatedOrder = await updateIncomingOrderStatus({
+          orderId,
+          decision,
+          accessToken,
+        });
+
+        const nextStatus = (updatedOrder?.status || decision || '').toLowerCase();
+        updateLocalOrderStatus(orderId, nextStatus);
+      } catch (error) {
+        setErrorMessage(error.message || 'Failed to update order status.');
+      } finally {
+        setSubmittingByOrder(current => {
+          const next = {...current};
+          delete next[orderId];
+          return next;
+        });
+      }
+    },
+    [accessToken, updateLocalOrderStatus],
+  );
+
+  const displayedOrders = useMemo(
+    () =>
+      orders
+        .filter(order => order.status === 'pending')
+        .sort((orderA, orderB) => new Date(orderA.eventDateISO) - new Date(orderB.eventDateISO)),
+    [orders],
+  );
 
   return (
     <ScreenContainer scrollable contentStyle={styles.listContent}>
       <SectionHeader title="Incoming Orders" subtitle="Accept or reject new requests" />
 
-      {displayedOrders.length === 0 ? (
+      {isLoading ? (
+        <Card style={styles.emptyCard}>
+          <Text style={styles.emptyTitle}>Loading incoming orders...</Text>
+          <Text style={styles.emptySubtitle}>Please wait while we fetch the latest requests.</Text>
+        </Card>
+      ) : errorMessage ? (
+        <Card style={styles.emptyCard}>
+          <Text style={styles.emptyTitle}>Couldn’t load orders</Text>
+          <Text style={styles.emptySubtitle}>{errorMessage}</Text>
+          <TouchableOpacity onPress={fetchIncomingOrders}>
+            <Text style={styles.menuChipMoreText}>Try Again</Text>
+          </TouchableOpacity>
+        </Card>
+      ) : displayedOrders.length === 0 ? (
         <Card style={styles.emptyCard}>
           <Text style={styles.emptyTitle}>All Caught Up 🎉</Text>
           <Text style={styles.emptySubtitle}>
@@ -48,10 +172,12 @@ const IncomingOrders = () => {
         </Card>
       ) : (
         displayedOrders.map(item => {
-          const daysUntil = getDaysUntil(item.date);
+          const daysUntil = getDaysUntil(item.eventDateISO);
           const priority = getPriority(item);
           const visibleMenuItems = item.menuItems.slice(0, 2);
           const remainingMenuCount = item.menuItems.length - visibleMenuItems.length;
+          const currentDecision = submittingByOrder[item.id];
+          const isSubmitting = Boolean(currentDecision);
 
           return (
             <Card key={item.id} style={styles.item}>
@@ -111,15 +237,17 @@ const IncomingOrders = () => {
               <View style={styles.cardDivider} />
               <View style={styles.actions}>
                 <AppButton
-                  title="Accept"
+                  title={currentDecision === 'accept' ? 'Accepting...' : 'Accept'}
                   style={styles.actionButton}
-                  onPress={() => updateOrderStatus(item.id, 'accepted')}
+                  disabled={isSubmitting}
+                  onPress={() => handleDecision(item.id, 'accept')}
                 />
                 <AppButton
-                  title="Reject"
+                  title={currentDecision === 'reject' ? 'Rejecting...' : 'Reject'}
                   variant="outline"
                   style={styles.actionButton}
-                  onPress={() => updateOrderStatus(item.id, 'rejected')}
+                  disabled={isSubmitting}
+                  onPress={() => handleDecision(item.id, 'reject')}
                 />
               </View>
             </Card>
