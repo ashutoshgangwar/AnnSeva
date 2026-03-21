@@ -1,28 +1,120 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {Text, View} from 'react-native';
 import AppButton from '../../../components/AppButton';
 import InputField from '../../../components/InputField';
 import ScreenContainer from '../../../components/ScreenContainer';
 import SectionHeader from '../../../components/SectionHeader';
 import {useAuth} from '../../../context/AuthContext';
+import {onboardHalwai} from '../../../services/halwaiApi';
 import styles from './HalwaiOnboarding.styles';
 
+const STORAGE_USER_NAME_KEY = 'annseva_user_name';
+
 const HalwaiOnboarding = () => {
-  const {user, setHalwaiOnboardingComplete} = useAuth();
+  const {user, accessToken, setHalwaiOnboardingComplete} = useAuth();
   const [form, setForm] = useState({
     halwaiName: user?.name || '',
     shopName: '',
     location: '',
-    phoneNumber: user?.phone || '',
+    phoneNumber: user?.phoneNumber || user?.phone || '',
     alternatePhoneNumber: '',
     gstNumber: '',
     licenseNumber: '',
   });
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleContinue = () => {
+  useEffect(() => {
+    let isMounted = true;
+
+    const hydrateSavedName = async () => {
+      const savedName = await AsyncStorage.getItem(STORAGE_USER_NAME_KEY).catch(() => null);
+      if (!savedName || !isMounted) {
+        return;
+      }
+
+      setForm(current => {
+        if (current.halwaiName) {
+          return current;
+        }
+
+        return {
+          ...current,
+          halwaiName: savedName,
+        };
+      });
+    };
+
+    hydrateSavedName();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleContinue = async () => {
+    if (isSubmitting) {
+      return;
+    }
+
     setError('');
-    setHalwaiOnboardingComplete(true);
+
+    const payload = {
+      halwaiName: form.halwaiName.trim(),
+      shopName: form.shopName.trim(),
+      location: form.location.trim(),
+      phoneNumber: form.phoneNumber.trim(),
+      alternatePhoneNumber: form.alternatePhoneNumber.trim(),
+      gstNumber: form.gstNumber.trim(),
+      licenseNumber: form.licenseNumber.trim(),
+    };
+
+    if (!payload.halwaiName || !payload.shopName || !payload.location || !payload.phoneNumber) {
+      setError('Please fill all required fields');
+      return;
+    }
+
+    const primaryPhoneDigits = payload.phoneNumber.replace(/\D/g, '');
+    if (primaryPhoneDigits.length < 10) {
+      setError('Please enter a valid phone number');
+      return;
+    }
+
+    if (payload.alternatePhoneNumber) {
+      const alternatePhoneDigits = payload.alternatePhoneNumber.replace(/\D/g, '');
+      if (alternatePhoneDigits.length < 10) {
+        setError('Please enter a valid alternate phone number');
+        return;
+      }
+    }
+
+    const requestPayload = {
+      halwaiName: payload.halwaiName,
+      shopName: payload.shopName,
+      location: payload.location,
+      phoneNumber: payload.phoneNumber,
+      ...(payload.alternatePhoneNumber
+        ? {alternatePhoneNumber: payload.alternatePhoneNumber}
+        : {}),
+      ...(payload.gstNumber ? {gstNumber: payload.gstNumber} : {}),
+      ...(payload.licenseNumber ? {licenseNumber: payload.licenseNumber} : {}),
+    };
+
+    setIsSubmitting(true);
+
+    try {
+      await onboardHalwai({
+        payload: requestPayload,
+        accessToken,
+      });
+
+      await setHalwaiOnboardingComplete(true);
+    } catch (submitError) {
+      setError(submitError?.message || 'Unable to submit onboarding details');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const updateField = (key, value) => {
@@ -101,7 +193,10 @@ const HalwaiOnboarding = () => {
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       <View style={styles.actions}>
-        <AppButton title="Submit & Continue" onPress={handleContinue} />
+        <AppButton
+          title={isSubmitting ? 'Submitting...' : 'Submit & Continue'}
+          onPress={handleContinue}
+        />
       </View>
     </ScreenContainer>
   );

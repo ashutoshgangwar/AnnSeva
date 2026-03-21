@@ -26,6 +26,7 @@ const parseAuthResponse = payload => {
       ...data.user,
       userId: normalizedUserId,
       role: data.user.role,
+      hasProfileId: data.user.hasProfileId ?? Boolean(data.user.profileId),
       profileId: data.user.profileId ?? null,
       profileModel: data.user.profileModel ?? null,
       picture: data.user.picture ?? '',
