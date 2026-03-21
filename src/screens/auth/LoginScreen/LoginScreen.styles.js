@@ -19,6 +19,49 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.8)',
     fontSize: moderateScale(13),
   },
+  modeSwitch: {
+    flexDirection: 'row',
+    backgroundColor: theme.colors.card,
+    borderRadius: moderateScale(theme.radius.md),
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: moderateScale(4),
+    marginBottom: verticalScale(theme.spacing.md),
+  },
+  modeOption: {
+    flex: 1,
+    paddingVertical: verticalScale(theme.spacing.sm),
+    borderRadius: moderateScale(theme.radius.sm),
+    alignItems: 'center',
+  },
+  modeOptionActive: {
+    backgroundColor: '#E8F5E9',
+  },
+  modeText: {
+    fontSize: moderateScale(14),
+    fontWeight: '600',
+    color: theme.colors.muted,
+  },
+  modeTextActive: {
+    color: theme.colors.primary,
+  },
+  orRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: -verticalScale(theme.spacing.xs),
+    marginBottom: verticalScale(theme.spacing.sm),
+  },
+  orLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: theme.colors.border,
+  },
+  orText: {
+    marginHorizontal: moderateScale(theme.spacing.sm),
+    fontSize: moderateScale(12),
+    fontWeight: '600',
+    color: theme.colors.muted,
+  },
   roleCard: {
     backgroundColor: theme.colors.card,
     borderRadius: moderateScale(theme.radius.md),

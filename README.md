@@ -1,9 +1,75 @@
 This is a [**React Native CLI**](https://reactnative.dev) project for **AnnSeva**, a platform connecting customers who organize Bhandara/Langar with trusted Halwai vendors.
 
-## Quick Demo Credentials (Mock)
+## Environment Variables
 
-- Customer: `9999999999`
-- Halwai: `8888888888`
+This project uses `react-native-dotenv` to import values from `.env`.
+
+- Use only `.env` in project root.
+
+Required for auth flow:
+
+- `API_BASE_URL` (example: `https://api.example.com`)
+
+Example usage:
+
+```js
+import {APP_ENV, API_BASE_URL} from '@env';
+```
+
+## Authentication Flow
+
+The app uses email/password authentication with role-based signup.
+
+Endpoints:
+
+- `POST /api/v1/auth/signup`
+- `POST /api/v1/auth/login`
+
+Signup request payload:
+
+```json
+{
+	"name": "Ashutosh",
+	"email": "ashu@example.com",
+	"phoneNumber": "9876543210",
+	"password": "123456",
+	"role": "customer"
+}
+```
+
+or
+
+```json
+{
+	"name": "Ashutosh",
+	"email": "ashu@example.com",
+	"phoneNumber": "9876543210",
+	"password": "123456",
+	"role": "halwai"
+}
+```
+
+`email` and `phoneNumber` are optional individually, but at least one is required.
+
+Login request payload:
+
+```json
+{
+	"email": "ashu@example.com",
+	"phoneNumber": "9876543210",
+	"password": "123456"
+}
+```
+
+Login supports email + password or phoneNumber + password.
+
+Response fields used:
+
+- `data.token`
+- `data.user.userId`
+- `data.user.name`
+- `data.user.role`
+- `data.user.profileId`
 
 ## Project Structure
 
