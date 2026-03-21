@@ -1,8 +1,8 @@
-import React, {useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {ScrollView, Text, TouchableOpacity, View} from 'react-native';
 import ScreenContainer from '../../../components/ScreenContainer';
 import {useAuth} from '../../../context/AuthContext';
-import {useOrders} from '../../../context/OrdersContext';
+import {getCustomerOrders} from '../../../services/orderApi';
 import styles from './MyOrders.styles';
 
 const STATUS_TABS = [
@@ -23,16 +23,76 @@ const PROGRESS_STEPS = ['pending', 'accepted', 'reached', 'completed'];
 const PROGRESS_LABELS = {pending: 'Submitted', accepted: 'Accepted', reached: 'Reached', completed: 'Done'};
 
 const MyOrders = ({navigation}) => {
-  const {user} = useAuth();
-  const {orders} = useOrders();
+  const {user, accessToken} = useAuth();
   const [activeTab, setActiveTab] = useState('all');
+  const [orders, setOrders] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
-  const myOrders = orders
-    .filter(o => o.customerId === user?.id)
-    .filter(o => activeTab === 'all' || o.status === activeTab)
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
+  const customerId = user?.userId || user?._id || user?.id;
 
-  const allMyOrders = orders.filter(o => o.customerId === user?.id);
+  const fetchOrders = useCallback(async () => {
+    if (!customerId) {
+      setOrders([]);
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMessage('');
+
+    try {
+      const responseData = await getCustomerOrders({
+        customerId,
+        accessToken,
+      });
+
+      setOrders(responseData?.orders || []);
+    } catch (error) {
+      setErrorMessage(error.message || 'Failed to fetch orders.');
+      setOrders([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [accessToken, customerId]);
+
+  useEffect(() => {
+    fetchOrders();
+  }, [fetchOrders]);
+
+  const getOrderDate = order => order.createdAt || order.updatedAt || order.eventDate || '';
+
+  const getOrderProgress = order => {
+    const currentStatus = (order?.status || '').toLowerCase();
+    if (currentStatus === 'completed') {
+      return 'completed';
+    }
+    if (currentStatus === 'reached') {
+      return 'reached';
+    }
+    if (currentStatus === 'accepted') {
+      return 'accepted';
+    }
+    return 'pending';
+  };
+
+  const toUiOrder = order => ({
+    ...order,
+    id: order?.orderId || order?._id || order?.id || '',
+    location: order?.customerLocation?.address || 'Location not available',
+    date: order?.eventDate ? new Date(order.eventDate).toLocaleDateString('en-IN') : 'Date not available',
+    peopleCount: order?.numberOfGuests || 0,
+    progress: getOrderProgress(order),
+    estimatedCost: Number(order?.estimatedCost || 0),
+    menuItems: Array.isArray(order?.menuItems) ? order.menuItems : [],
+  });
+
+  const allMyOrders = useMemo(
+    () => orders.map(toUiOrder).sort((a, b) => new Date(getOrderDate(b)) - new Date(getOrderDate(a))),
+    [orders],
+  );
+
+  const myOrders = allMyOrders.filter(order => activeTab === 'all' || order.status === activeTab);
+
   const counts = STATUS_TABS.slice(1).reduce((acc, t) => {
     acc[t.value] = allMyOrders.filter(o => o.status === t.value).length;
     return acc;
@@ -66,13 +126,16 @@ const MyOrders = ({navigation}) => {
 
   const renderCard = order => {
     const cfg = STATUS_CONFIG[order.status] || STATUS_CONFIG.pending;
+    const resolvedOrderId = order.id || 'N/A';
+    const resolvedEstimatedCost = order.estimatedCost || order.peopleCount * 180;
+
     return (
-      <View key={order.id} style={styles.card}>
+      <View key={resolvedOrderId} style={styles.card}>
         {/* Status bar */}
         <View style={[styles.statusBar, {backgroundColor: cfg.bg, borderColor: cfg.border}]}>
           <Text style={[styles.statusIcon]}>{cfg.icon}</Text>
           <Text style={[styles.statusLabel, {color: cfg.color}]}>{cfg.label}</Text>
-          <Text style={styles.orderId}>#{order.id.replace('order_', '')}</Text>
+          <Text style={styles.orderId}>#{resolvedOrderId.replace('order_', '')}</Text>
         </View>
 
         {/* Main info */}
@@ -87,7 +150,7 @@ const MyOrders = ({navigation}) => {
               </View>
             </View>
             <View style={styles.costBadge}>
-              <Text style={styles.costValue}>₹{(order.peopleCount * 180).toLocaleString()}</Text>
+              <Text style={styles.costValue}>₹{resolvedEstimatedCost.toLocaleString()}</Text>
               <Text style={styles.costLabel}>Est.</Text>
             </View>
           </View>
@@ -113,7 +176,7 @@ const MyOrders = ({navigation}) => {
           {order.status === 'completed' && (
             <TouchableOpacity
               style={styles.summaryBtn}
-              onPress={() => navigation.navigate('OrderSummary', {orderId: order.id})}>
+              onPress={() => navigation.navigate('OrderSummary', {orderId: resolvedOrderId})}>
               <Text style={styles.summaryBtnText}>📊 View Final Summary & Rate</Text>
             </TouchableOpacity>
           )}
@@ -160,7 +223,21 @@ const MyOrders = ({navigation}) => {
       </ScrollView>
 
       {/* Order list */}
-      {myOrders.length === 0 ? (
+      {isLoading ? (
+        <View style={styles.emptyBox}>
+          <Text style={styles.emptyIcon}>⏳</Text>
+          <Text style={styles.emptyTitle}>Loading your orders...</Text>
+        </View>
+      ) : errorMessage ? (
+        <View style={styles.emptyBox}>
+          <Text style={styles.emptyIcon}>⚠️</Text>
+          <Text style={styles.emptyTitle}>Could not load orders</Text>
+          <Text style={styles.emptyText}>{errorMessage}</Text>
+          <TouchableOpacity style={styles.summaryBtn} onPress={fetchOrders}>
+            <Text style={styles.summaryBtnText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      ) : myOrders.length === 0 ? (
         <View style={styles.emptyBox}>
           <Text style={styles.emptyIcon}>📦</Text>
           <Text style={styles.emptyTitle}>No orders here</Text>
